@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title></title>
+  <script type="text/javascript" src="libs/three.min.js"></script>
+  <script type="text/javascript" src="libs/plugins/controls/OrbitControls.js"></script>
+  <script type="text/javascript" src="libs/plugins/loaders/MD2Loader.js"></script>
+  <script type="text/javascript" src="libs/plugins/MD2CharacterComplex.js"></script>
+  <script type="text/javascript" src="libs/plugins/Gyroscope.js"></script>
+  <script type="text/javascript" src="libs/plugins/renderers/Projector.js"></script>
+</head>
+<body>
+<script type="text/javascript">
+  var container = document.createElement( 'div' );
+  document.body.appendChild( container );
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.Fog( 0xffffff, 1000, 4000 );
+
+  var camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 4000 );
+  camera.position.set( 0, 150, 1300 );
+
+  scene.add(camera);
+
+  var gt = new THREE.TextureLoader().load( "assets/textures/grasslight-big.jpg" );
+  var gg = new THREE.PlaneBufferGeometry( 16000, 16000 );
+  var gm = new THREE.MeshPhongMaterial( { color: 0xffffff, map: gt } );
+  var ground = new THREE.Mesh( gg, gm );
+  ground.rotation.x = - Math.PI / 2;
+  ground.material.map.repeat.set( 64, 64 );
+  ground.material.map.wrapS = THREE.RepeatWrapping;
+  ground.material.map.wrapT = THREE.RepeatWrapping;
+
+  scene.add(ground);
+
+  var light = new THREE.DirectionalLight( 0xffffff, 2.25 );
+  light.position.set( 200, 450, 500 );
+  light.castShadow = true;
+
+
+  scene.add(light);
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setClearColor( scene.fog.color );
+  renderer.setPixelRatio( window.devicePixelRatio );
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  container.appendChild( renderer.domElement );
+
+  // CONTROLS
+  cameraControls = new THREE.OrbitControls( camera, renderer.domElement );
+  cameraControls.target.set( 0, 50, 0 );
+
+  // CHARACTER
+  var configOgro = {
+    baseUrl: "assets/models/md2/",
+    body: "ogro.md2",
+    skins: [ "grok.jpg", "ogrobase.png", "arboshak.png", "ctf_r.png", "ctf_b.png", "darkam.png", "freedom.png",
+         "gib.png", "gordogh.png", "igdosh.png", "khorne.png", "nabogro.png",
+         "sharokh.png" ],
+    weapons:  [ [ "weapon.md2", "weapon.jpg" ] ],
+    animations: {
+      move: "run",
+      idle: "stand",
+      jump: "jump",
+      attack: "attack",
+      crouchMove: "cwalk",
+      crouchIdle: "cstand",
+      crouchAttach: "crattack"
+    },
+    walkSpeed: 350,
+    crouchSpeed: 175
+  };
+
+  var characters = [];
+  var nRows = 10;
+  var nSkins = 3 || configOgro.skins.length;
+  var nCharacters = nSkins * nRows;
+
+  var controls = {
+    moveForward: true,
+    moveBackward: false,
+    moveLeft: false,
+    moveRight: false
+  };
+
+  for ( var i = 0; i < nCharacters; i ++ ) {
+    var character = new THREE.MD2CharacterComplex();
+    character.scale = 3;
+    character.controls = controls;
+    characters.push( character );
+  }
+
+  var baseCharacter = new THREE.MD2CharacterComplex();
+  baseCharacter.scale = 3;
+  baseCharacter.onLoadComplete = function () {
+    var k = 0;
+    for ( var j = 0; j < nRows; j ++ ) {
+      for ( var i = 0; i < nSkins; i ++ ) {
+        var cloneCharacter = characters[ k ];
+        cloneCharacter.shareParts( baseCharacter );
+        // cast and receive shadows
+        cloneCharacter.enableShadows( true );
+        cloneCharacter.setWeapon( 0 );
+        cloneCharacter.setSkin( i );
+        cloneCharacter.root.position.x = ( i - nSkins/2 ) * 150 + Math.random() * 1000 - 500;
+        cloneCharacter.root.position.z = -j * 400 - 20;
+        scene.add( cloneCharacter.root );
+        k ++;
+      }
+    }
+    /*var gyro = new THREE.Gyroscope();
+    gyro.add( camera );
+    gyro.add( light, light.target );
+    characters[ Math.floor( nSkins / 2 ) ].root.add( gyro );*/
+  };
+  baseCharacter.loadParts( configOgro );
+
+  function onKeyDown ( event ) {
+    event.stopPropagation();
+    switch( event.keyCode ) {
+      case 38: /*up*/
+      case 87: /*W*/  controls.moveForward = true; break;
+      case 40: /*down*/
+      case 83: /*S*/   controls.moveBackward = true; break;
+      case 37: /*left*/
+      case 65: /*A*/   controls.moveLeft = true; break;
+      case 39: /*right*/
+      case 68: /*D*/    controls.moveRight = true; break;
+      case 67: /*C*/     controls.crouch = true; break;
+      case 32: /*space*/ controls.jump = true; break;
+      case 17: /*ctrl*/  controls.attack = true; break;
+    }
+  }
+  function onKeyUp ( event ) {
+    event.stopPropagation();
+    switch( event.keyCode ) {
+      case 38: /*up*/
+      case 87: /*W*/ controls.moveForward = false; break;
+      case 40: /*down*/
+      case 83: /*S*/   controls.moveBackward = false; break;
+      case 37: /*left*/
+      case 65: /*A*/   controls.moveLeft = false; break;
+      case 39: /*right*/
+      case 68: /*D*/    controls.moveRight = false; break;
+      case 67: /*C*/     controls.crouch = false; break;
+      case 32: /*space*/ controls.jump = false; break;
+      case 17: /*ctrl*/  controls.attack = false; break;
+    }
+  }
+  var projector = new THREE.Projector();
+  function onClick(event) {
+    event.preventDefault();
+    var vector = new THREE.Vector3(( event.clientX / window.innerWidth ) * 2 - 1, - ( event.clientY / window.innerHeight ) * 2 + 1, 0.5);
+    //projector.unprojectVector(vector, camera);
+    vector.unproject(camera);
+
+    var raycaster = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
+
+    /*var box = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100), new THREE.MeshBasicMaterial({color: 0xff0000}))
+    box.position.copy(characters[0].root.position, box.position);
+    console.log(characters[0].root.position, box.position)
+    scene.add(box);*/
+
+    var intersects = raycaster.intersectObjects([characters[0].root, box]);
+    //console.log(intersects)
+
+  }
+  document.addEventListener( 'keydown', onKeyDown, false );
+  document.addEventListener( 'keyup', onKeyUp, false );
+  document.addEventListener('click', onClick, false);
+
+  var clock = new THREE.Clock();
+
+  var frame;
+  function animate() {
+    frame = requestAnimationFrame( animate );
+    render();
+  }
+
+  function hitAnimation(character) {
+    var mesh = character.root;
+    var mat0 = character.meshBody.material;
+    var opacity0 = mat0.opacity;
+    var mat1 = character.meshWeapon.material;
+    var opacity1 = mat1.opacity;
+    if (mesh.rotation.x < Math.PI / -2) {
+      //recure at end
+      character.hitted = false;
+      mesh.position.z = -3000;
+      return;
+    }
+    mesh.rotateX(-0.1);
+    mesh.translateY(150 / 15);
+    mesh.translateZ(-250 / 15);
+    mat0.color = new THREE.Color(1, 0, 0);
+    mat0.transparent = true;
+    mat0.opacity = opacity0 * 0.9;
+    mat1.color = new THREE.Color(1, 0, 0);
+    mat1.transparent = true;
+    mat1.opacity = opacity1 * 0.9;
+  }
+
+  function render() {
+    var delta = clock.getDelta();
+    cameraControls.update(delta);
+    for ( var i = 0; i < nCharacters; i ++ ) {
+      if (characters[i].hitted) {
+        hitAnimation(characters[i]);
+      }
+      characters[ i ].update( delta );
+      if (characters[i].root.position.z > 1500) {
+        characters[i].root.position.z = -3000;
+      }
+    }
+    renderer.render(scene, camera);
+  }
+
+  animate();
+</script>
+</body>
+</html>
