@@ -2,14 +2,24 @@
 <html>
 <head>
   <title></title>
-  <script type="text/javascript" src="libs/three.min.js"></script>
-  <script type="text/javascript" src="libs/plugins/controls/OrbitControls.js"></script>
+  <script type="text/javascript" src="libs/three.js"></script>
+  <script type="text/javascript" src="libs/plugins/controls/TrackballControls.js"></script>
   <script type="text/javascript" src="libs/plugins/loaders/MD2Loader.js"></script>
   <script type="text/javascript" src="libs/plugins/MD2CharacterComplex.js"></script>
   <script type="text/javascript" src="libs/plugins/Gyroscope.js"></script>
-  <script type="text/javascript" src="libs/plugins/renderers/Projector.js"></script>
+  <style type="text/css">
+    #tip {
+      position: absolute;
+      top: 50;
+      left: 50;
+      z-index: 1;
+    }
+  </style>
 </head>
 <body>
+<div id="tip">
+  Tip: Tap the Orcs!
+</div>
 <script type="text/javascript">
   var container = document.createElement( 'div' );
   document.body.appendChild( container );
@@ -47,8 +57,7 @@
   container.appendChild( renderer.domElement );
 
   // CONTROLS
-  cameraControls = new THREE.OrbitControls( camera, renderer.domElement );
-  cameraControls.target.set( 0, 50, 0 );
+  cameraControls = new THREE.TrackballControls(camera);
 
   // CHARACTER
   var configOgro = {
@@ -73,7 +82,7 @@
 
   var characters = [];
   var nRows = 10;
-  var nSkins = 3 || configOgro.skins.length;
+  var nSkins = 5 || configOgro.skins.length;
   var nCharacters = nSkins * nRows;
 
   var controls = {
@@ -87,6 +96,7 @@
     var character = new THREE.MD2CharacterComplex();
     character.scale = 3;
     character.controls = controls;
+    character.visible = true;
     characters.push( character );
   }
 
@@ -104,6 +114,11 @@
         cloneCharacter.setSkin( i );
         cloneCharacter.root.position.x = ( i - nSkins/2 ) * 150 + Math.random() * 1000 - 500;
         cloneCharacter.root.position.z = -j * 400 - 20;
+        cloneCharacter.meshBody.character = cloneCharacter;
+        cloneCharacter.meshWeapon.character = cloneCharacter;
+        cloneCharacter.raycast = function(raycaster, intersects) {
+          return this.meshBody.raycast(raycaster, intersects) || this.meshWeapon.raycast(raycaster, intersects);
+        }
         scene.add( cloneCharacter.root );
         k ++;
       }
@@ -147,27 +162,26 @@
       case 17: /*ctrl*/  controls.attack = false; break;
     }
   }
-  var projector = new THREE.Projector();
+  var raycaster = new THREE.Raycaster();
+  var mouse = new THREE.Vector2;
+
   function onClick(event) {
     event.preventDefault();
-    var vector = new THREE.Vector3(( event.clientX / window.innerWidth ) * 2 - 1, - ( event.clientY / window.innerHeight ) * 2 + 1, 0.5);
-    //projector.unprojectVector(vector, camera);
-    vector.unproject(camera);
+    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
 
-    var raycaster = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
-
-    /*var box = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100), new THREE.MeshBasicMaterial({color: 0xff0000}))
-    box.position.copy(characters[0].root.position, box.position);
-    console.log(characters[0].root.position, box.position)
-    scene.add(box);*/
-
-    var intersects = raycaster.intersectObjects([characters[0].root, box]);
-    //console.log(intersects)
-
+    raycaster.setFromCamera(mouse, camera);
+    
+    var intersects = raycaster.intersectObjects(characters);
+    
+    if (intersects.length) {
+      intersects[0].object.character.hitted = true;
+    }
   }
   document.addEventListener( 'keydown', onKeyDown, false );
   document.addEventListener( 'keyup', onKeyUp, false );
   document.addEventListener('click', onClick, false);
+  document.addEventListener('touchend', onClick, false);
 
   var clock = new THREE.Clock();
 
@@ -183,10 +197,23 @@
     var opacity0 = mat0.opacity;
     var mat1 = character.meshWeapon.material;
     var opacity1 = mat1.opacity;
+    if (!mesh.lastMatrix) {
+      mesh.lastMatrix = mesh.matrix.clone();
+    }
     if (mesh.rotation.x < Math.PI / -2) {
       //recure at end
       character.hitted = false;
+      mesh.matrix.copy(mesh.lastMatrix);
+      mesh.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+      window.mesh = mesh;
+      mesh.lastMatrix = null;
       mesh.position.z = -3000;
+      mat0.color = new THREE.Color(1, 1, 1);
+      mat0.transparent = false;
+      mat0.opacity = 1;
+      mat1.color = new THREE.Color(1, 1, 1);
+      mat1.transparent = false;
+      mat1.opacity = 1;
       return;
     }
     mesh.rotateX(-0.1);
@@ -203,6 +230,7 @@
   function render() {
     var delta = clock.getDelta();
     cameraControls.update(delta);
+
     for ( var i = 0; i < nCharacters; i ++ ) {
       if (characters[i].hitted) {
         hitAnimation(characters[i]);
@@ -212,6 +240,7 @@
         characters[i].root.position.z = -3000;
       }
     }
+
     renderer.render(scene, camera);
   }
 
