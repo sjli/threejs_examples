@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">
   <script type="text/javascript" src="libs/three.js"></script>
   <script type="text/javascript" src="libs/plugins/controls/OrbitControls.js"></script>
+  <script type="text/javascript" src="libs/plugins/controls/TransformControls.js"></script>
   <script type="text/javascript" src="libs/plugins/loaders/MTLLoader.js"></script>
   <script type="text/javascript" src="libs/plugins/loaders/OBJLoader.js"></script>
   <style type="text/css">
@@ -18,14 +19,24 @@
       left: 10%;
       z-index: 1;
     }
+    #log {
+      opacity: 0.7;
+    }
   </style>
 </head>
 <body>
 <div id="tip">
+  Tip: All textures from cgtrader.com.
+  <br>
+  OBJ Loading Logs:
+  <br>
+  <div id="log"></div>
 </div>
 <script type="text/javascript">
   var container = document.createElement( 'div' );
   document.body.appendChild( container );
+
+  var log = document.querySelector('#log');
 
   var SCREEN_WIDTH = document.documentElement.clientWidth;
   var SCREEN_HEIGHT = document.documentElement.clientHeight;
@@ -37,7 +48,7 @@
 
   var camera = new THREE.PerspectiveCamera( 60, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 1200 );
   //var camera = new THREE.OrthographicCamera(-1000, 1000, 600, -600, 1, 2000);
-  camera.position.set( 0, 130, 100 );
+  camera.position.set( 200, 130, -50 );
   //camera.lookAt(new THREE.Vector3(0, 150, -100));
   scene.add(camera);
 
@@ -47,12 +58,6 @@
   renderer.setPixelRatio( window.devicePixelRatio );
   renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
   container.appendChild( renderer.domElement );
-
-  // CONTROLS
-  cameraControls = new THREE.OrbitControls(camera, renderer.domElement);
-  cameraControls.enableZoom = false;
-  cameraControls.target = new THREE.Vector3(0, 150, 0);
-  cameraControls.update();
 
   // Room
   var wallTexture = new THREE.TextureLoader().load('./assets/textures/wallpaper.jpg');
@@ -123,6 +128,7 @@
   function loadMTLOBJ(name, posx, posy, posz, scale, rotY, callback) {
     var mtlLoader = new THREE.MTLLoader();
     mtlLoader.setPath('assets/models/obj/');
+    log.innerHTML += name + ' loading...<br>';
     mtlLoader.load(name + '.mtl', function(materials) {
       materials.preload();
       
@@ -135,9 +141,18 @@
         obj.position.set(posx, posy, posz);
         scene.add(obj);
         scene.obj[name] = obj;
+
+        //for group raycast test
+        obj.raycast = function(raycaster, intersects) {
+          return obj.children.every(function(child) {
+            return child.raycast(raycaster, intersects);
+          });
+        }
+
         if (callback) {
           callback(obj);
         }
+        log.innerHTML = log.innerHTML.replace(name + ' loading...<br>', name + ' loaded.<br>');
       });
     });
   }
@@ -146,7 +161,9 @@
     obj.children[4].material.map = wood;
   });
 
-  loadMTLOBJ('sofa', -100, 0, 180, 1, Math.PI);
+  loadMTLOBJ('sofa', -100, 0, 180, 1, Math.PI, function() {
+    objControls.attach(scene.obj.sofa);
+  });
 
   loadMTLOBJ('table1', -50, 0, -180, 0.1, Math.PI);
 
@@ -177,7 +194,7 @@
   });
 
   loadMTLOBJ('window', -290, 100, 0, 0.1, -Math.PI/2, function(obj) {
-    var view = new THREE.TextureLoader().load('assets/textures/view-out-window.jpg');
+    var view = new THREE.TextureLoader().load('assets/textures/View-out-window.jpg');
     view.wrapS = THREE.RepeatWrapping;
     view.wrapT = THREE.RepeatWrapping;
     var size = (new THREE.Box3().setFromObject(obj)).getSize();
@@ -214,6 +231,49 @@
     scene.add(splight);
   });
 
+  // CONTROLS
+  var cameraControls = new THREE.OrbitControls(camera, renderer.domElement);
+  cameraControls.enableZoom = false;
+  cameraControls.target = new THREE.Vector3(0, 100, 0);
+  cameraControls.update();
+
+  var objControls = new THREE.TransformControls(camera, renderer.domElement);
+  objControls.setMode('translate');
+  scene.add(objControls);
+
+  //translate at xz axis only when move the objects on the floor
+  var disableAxis = ['Y', 'XY', 'YZ', 'XYZ'];
+  var disableIndices = [2, 3, 6, 7, 8]; //2=axis y line, 3=axis y arrow
+  var pickers = objControls.children[0].pickerGizmos;
+  var meshes = objControls.children[0].children[0].children;
+  disableAxis.forEach(function(axis) {
+    pickers[axis][0][0].visible = false;
+  });
+  disableIndices.forEach(function(index) {
+    meshes[index].visible = false;
+  });
+
+  //Actions
+  var raycaster = new THREE.Raycaster();
+  var mouse = new THREE.Vector2;
+
+  function onClick(event) {
+    event.preventDefault();
+    mouse.x = ( (event.clientX || event.pageX) / window.innerWidth ) * 2 - 1;
+    mouse.y = - ( (event.clientY || event.pageY) / window.innerHeight ) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    
+    var intersects = raycaster.intersectObjects(Object.values(scene.obj));
+    if (intersects.length) {
+        console.log('hit')
+    }
+  }
+
+  document.addEventListener('click', onClick, false);
+  document.addEventListener('touchend', onClick, false);
+
+
+
   var frame;
 
   function animate() {
@@ -224,6 +284,7 @@
   function render() {
     var delta = clock.getDelta();
     //cameraControls.update(delta);
+    objControls.update();
 
     renderer.render(scene, camera);
   }
