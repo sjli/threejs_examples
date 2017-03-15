@@ -3,7 +3,8 @@
 <head>
   <title></title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">
-  <script type="text/javascript" src="libs/three.js"></script>
+  <script type="text/javascript" src="libs/three.min.js"></script>
+  <script type="text/javascript" src="libs/storage.js"></script>
   <script type="text/javascript" src="libs/plugins/controls/OrbitControls.js"></script>
   <script type="text/javascript" src="libs/plugins/controls/TransformControls.js"></script>
   <script type="text/javascript" src="libs/plugins/loaders/MTLLoader.js"></script>
@@ -36,22 +37,14 @@
   var container = document.createElement( 'div' );
   document.body.appendChild( container );
 
+  var scene, camera, cameraControls, objControls;
+
+  var clock = new THREE.Clock();
+
   var log = document.querySelector('#log');
 
   var SCREEN_WIDTH = document.documentElement.clientWidth;
   var SCREEN_HEIGHT = document.documentElement.clientHeight;
-
-  var scene = new THREE.Scene();
-
-  var axisHelper = new THREE.AxisHelper( 1000 );
-  scene.add( axisHelper );
-
-  var camera = new THREE.PerspectiveCamera( 60, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 1200 );
-  //var camera = new THREE.OrthographicCamera(-1000, 1000, 600, -600, 1, 2000);
-  camera.position.set( 200, 130, -50 );
-  //camera.lookAt(new THREE.Vector3(0, 150, -100));
-  scene.add(camera);
-
 
   var renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setClearColor(0x000000);
@@ -59,238 +52,349 @@
   renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
   container.appendChild( renderer.domElement );
 
-  // Room
-  var wallTexture = new THREE.TextureLoader().load('./assets/textures/wallpaper.jpg');
-  wallTexture.wrapS = THREE.RepeatWrapping;
-  wallTexture.wrapT = THREE.RepeatWrapping;
-  wallTexture.minFilter = THREE.LinearMipMapLinearFilter;
-  wallTexture.magFilter = THREE.LinearMipMapLinearFilter;
-  wallTexture.repeat.set(3, 1);
-  var room = new THREE.Mesh(new THREE.BoxGeometry(600, 300, 400), new THREE.MultiMaterial([
-    new THREE.MeshPhongMaterial({
-      map: wallTexture,
-      depthWrite: false,
-      side: THREE.BackSide
-    }),
-    new THREE.MeshPhongMaterial({
-      map: wallTexture,
-      depthWrite: false,
-      side: THREE.BackSide
-    }),
-    new THREE.MeshPhongMaterial({
-      color: 0xffffff,
-      depthWrite: false,
-      side: THREE.BackSide,
-      emissive: 0xffffff,
-      emissiveIntensity: 0.4
-    }),
-    new THREE.MeshPhongMaterial({
-      color: 0xffffff,
-      depthWrite: false,
-      side: THREE.BackSide
-    }),
-    new THREE.MeshPhongMaterial({
-      map: wallTexture,
-      depthWrite: false,
-      side: THREE.BackSide
-    }),
-    new THREE.MeshPhongMaterial({
-      map: wallTexture,
-      depthWrite: false,
-      side: THREE.BackSide
-    })
-  ]));
-  room.position.set(0, 150, 0);
-  scene.add(room);
+  var storage = new Storage();
 
-  var clock = new THREE.Clock();
-
-  //plane
-  var planeTexture = new THREE.TextureLoader().load('assets/textures/tile.jpg');
-  planeTexture.wrapS = THREE.RepeatWrapping;
-  planeTexture.wrapT = THREE.RepeatWrapping;
-  planeTexture.repeat.set(10, 8);
-  planeTexture.minFilter = THREE.LinearMipMapNearestFilter;
-  planeTexture.magFilter = THREE.LinearFilter;
-  var plane = new THREE.Mesh(new THREE.PlaneGeometry(600, 400, 1, 1), new THREE.MeshBasicMaterial({
-    map: planeTexture
-  }));
-  plane.rotateX(-Math.PI/2);
-  scene.add(plane);
-
-  //Obj & Mtl
-  var wood = new THREE.TextureLoader().load('assets/textures/WOOD.jpg');
-  wood.wrapS = THREE.RepeatWrapping;
-  wood.wrapT = THREE.RepeatWrapping;
-  wood.repeat.set(1, 4);
-
-  scene.obj = {};
-  function loadMTLOBJ(name, posx, posy, posz, scale, rotY, callback) {
-    var mtlLoader = new THREE.MTLLoader();
-    mtlLoader.setPath('assets/models/obj/');
-    log.innerHTML += name + ' loading...<br>';
-    mtlLoader.load(name + '.mtl', function(materials) {
-      materials.preload();
-      
-      var objLoader = new THREE.OBJLoader();
-      objLoader.setPath('assets/models/obj/');
-      objLoader.setMaterials(materials);
-      objLoader.load(name + '.obj', function(obj) {
-        obj.rotateY(rotY);
-        obj.scale.set(scale, scale, scale);
-        obj.position.set(posx, posy, posz);
-        scene.add(obj);
-        scene.obj[name] = obj;
-
-        //for group raycast test
-        obj.raycast = function(raycaster, intersects) {
-          return obj.children.every(function(child) {
-            return child.raycast(raycaster, intersects);
-          });
-        }
-
-        if (callback) {
-          callback(obj);
-        }
-        log.innerHTML = log.innerHTML.replace(name + ' loading...<br>', name + ' loaded.<br>');
-      });
+  storage.init(function() {
+    storage.data = {};
+    storage.get(function(store) {
+      init(store);
     });
+
+    readyToStore();
+  });
+
+  function init(store) {
+    initScene();
+
+    if (store && store.room) {
+      var data = store.room;
+      scene.obj = {};
+      for (var i in data) {
+        var obj = new THREE.ObjectLoader().parse(data[i]);
+        scene.add(obj);
+        if (i === 'wall' || i === 'plane') {
+          scene[i] = obj;
+        } else {
+          scene.obj[i] = obj;
+        }
+        log.innerHTML += i + ' load from storage<br>';
+        console.log(i + ' load from storage');
+      }
+    } else {
+      console.log('load from network');
+    }
+    
+    initRoom();
+    initObjs();
+    initLight();
+    initControls();
+    animate();
   }
 
-  loadMTLOBJ('door', 150, 0, 190, 3, 0, function(obj) {
-    obj.children[4].material.map = wood;
-  });
-
-  loadMTLOBJ('sofa', -100, 0, 180, 1, Math.PI, function() {
-    objControls.attach(scene.obj.sofa);
-  });
-
-  loadMTLOBJ('table1', -50, 0, -180, 0.1, Math.PI);
-
-  loadMTLOBJ('tv', -50, 50, -180, 0.18, 0, function(obj) {
-    obj.children[0].material.color.set(0xdddddd);
-    obj.children[1].material.color.set(0xffffff);
-    obj.children[2].material.color.set(0x000000);
-  });
-
-  loadMTLOBJ('dinnertable', 200, 0, -80, 2, Math.PI/2, function(obj) {
-    obj.children.forEach(function(child, i) {
-      if (i !== 7) {
-        child.material.color.set(0xffffff);
-        child.material.map = wood;
-      } else {
-        child.material.color.set(0xcccccc);
-      }
-    })
-  });
-
-  loadMTLOBJ('plant', -260, 0, -180, 0.2, 0);
-
-  loadMTLOBJ('pic', 290, 150, -80, 0.03, -Math.PI/2, function(obj) {
-    obj.children[5].material.color.set(0xffffff);
-    var flower = new THREE.TextureLoader().load('assets/textures/lily.jpg');
-    flower.flipY = false;
-    obj.children[5].material.map = flower;
-  });
-
-  loadMTLOBJ('window', -290, 100, 0, 0.1, -Math.PI/2, function(obj) {
-    var view = new THREE.TextureLoader().load('assets/textures/View-out-window.jpg');
-    view.wrapS = THREE.RepeatWrapping;
-    view.wrapT = THREE.RepeatWrapping;
-    var size = (new THREE.Box3().setFromObject(obj)).getSize();
-    view.image.onload = function() {
-      view.repeat.set(size.z / view.image.width, size.y / view.image.height);
+  function readyToStore() {
+    if (!scene || !camera) {
+      return setTimeout(readyToStore, 5000);
     }
-    obj.children[0].material.color.set(0xffffff);
-    obj.children[0].material.map = view;
-  });
+    var room = {
+      wall: scene.wall.toJSON(),
+      plane: scene.plane.toJSON()
+    };
+
+    for(var i in scene.obj) {
+      room[i] = scene.obj[i].toJSON();
+    }
+    
+    storage.data.room = room;
+    storage.set(storage.data);
+    setTimeout(readyToStore, 5000);
+  }
+
+
+  function initScene() {
+    scene = new THREE.Scene();
+
+    camera = new THREE.PerspectiveCamera( 60, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 1200 );
+    //var camera = new THREE.OrthographicCamera(-1000, 1000, 600, -600, 1, 2000);
+    camera.position.set( 200, 130, -50 );
+    //camera.lookAt(new THREE.Vector3(0, 150, -100));
+    scene.add(camera);
+
+    var axisHelper = new THREE.AxisHelper( 1000 );
+    scene.add( axisHelper );
+  }
+
+  // Room
+  function initRoom() {
+    if (!scene.wall) {
+      var wallTexture = new THREE.TextureLoader().load('./assets/textures/wallpaper.jpg');
+      wallTexture.wrapS = THREE.RepeatWrapping;
+      wallTexture.wrapT = THREE.RepeatWrapping;
+      wallTexture.minFilter = THREE.LinearMipMapLinearFilter;
+      wallTexture.magFilter = THREE.LinearMipMapLinearFilter;
+      wallTexture.repeat.set(3, 1);
+      //MultiMaterial has been deprecated, and cannot toJSON
+      var wall = new THREE.Mesh(new THREE.BoxGeometry(600, 300, 400), 
+        //new THREE.MultiMaterial([
+          /*new THREE.MeshPhongMaterial({
+            map: wallTexture,
+            depthWrite: false,
+            side: THREE.BackSide
+          }),
+          new THREE.MeshPhongMaterial({
+            map: wallTexture,
+            depthWrite: false,
+            side: THREE.BackSide
+          }),
+          new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            depthWrite: false,
+            side: THREE.BackSide,
+            emissive: 0xffffff,
+            emissiveIntensity: 0.4
+          }),
+          new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            depthWrite: false,
+            side: THREE.BackSide
+          }),
+          new THREE.MeshPhongMaterial({
+            map: wallTexture,
+            depthWrite: false,
+            side: THREE.BackSide
+          }),*/
+          new THREE.MeshPhongMaterial({
+            map: wallTexture,
+            depthWrite: false,
+            side: THREE.BackSide
+          })
+        //])
+      );
+      wall.position.set(0, 150, 0);
+      scene.add(wall);
+      scene.wall = wall;
+    }
+    
+    //plane
+    if (!scene.plane) {
+      var planeTexture = new THREE.TextureLoader().load('assets/textures/tile.jpg');
+      planeTexture.wrapS = THREE.RepeatWrapping;
+      planeTexture.wrapT = THREE.RepeatWrapping;
+      planeTexture.repeat.set(10, 8);
+      planeTexture.minFilter = THREE.LinearMipMapNearestFilter;
+      planeTexture.magFilter = THREE.LinearFilter;
+      var plane = new THREE.Mesh(new THREE.PlaneGeometry(600, 400, 1, 1), new THREE.MeshBasicMaterial({
+        map: planeTexture
+      }));
+      plane.rotateX(-Math.PI/2);
+      scene.add(plane);
+      scene.plane = plane;
+    }
+  }
+
+  //Obj & Mtl
+  function initObjs() {
+    var wood;
+    
+    if (!scene.obj) {
+      scene.obj = {};
+    }
+    function loadMTLOBJ(name, posx, posy, posz, scale, rotY, callback) {
+      var mtlLoader = new THREE.MTLLoader();
+      mtlLoader.setPath('assets/models/obj/');
+      log.innerHTML += name + ' loading...<br>';
+      mtlLoader.load(name + '.mtl', function(materials) {
+        materials.preload();
+        
+        var objLoader = new THREE.OBJLoader();
+        var percentReg = new RegExp(name + '\\sloading...[\\d\\.%]*\\<br\\>');
+        objLoader.setPath('assets/models/obj/');
+        objLoader.setMaterials(materials);
+        objLoader.load(name + '.obj', function(obj) {
+          obj.rotateY(rotY);
+          obj.scale.set(scale, scale, scale);
+          obj.position.set(posx, posy, posz);
+          scene.add(obj);
+          scene.obj[name] = obj;
+
+          //for group raycast test
+          obj.raycast = function(raycaster, intersects) {
+            return obj.children.every(function(child) {
+              return child.raycast(raycaster, intersects);
+            });
+          }
+
+          if (callback) {
+            callback(obj);
+          }
+          log.innerHTML = log.innerHTML.replace(percentReg, name + ' loaded.<br>');
+        }, function(e) {
+          //progress
+          var percent = (e.loaded / e.total * 100).toFixed(2) + '%';
+          log.innerHTML = log.innerHTML.replace(percentReg, name + ' loading...' + percent + '<br>');
+        });
+      });
+    }
+
+    function getWoodTexture() {
+      wood = new THREE.TextureLoader().load('assets/textures/WOOD.jpg');
+      wood.wrapS = THREE.RepeatWrapping;
+      wood.wrapT = THREE.RepeatWrapping;
+      wood.repeat.set(1, 4);
+    }
+
+    if (!scene.obj.door) {
+      if (!wood) {getWoodTexture();}
+      loadMTLOBJ('door', 150, 0, 190, 3, 0, function(obj) {
+        obj.children[4].material.map = wood;
+      });
+    }
+    
+    if (!scene.obj.sofa) {
+      loadMTLOBJ('sofa', -100, 0, 180, 1, Math.PI, function() {
+        objControls.attach(scene.obj.sofa);
+      });
+    }
+    
+    if (!scene.obj.table1) {
+      loadMTLOBJ('table1', -50, 0, -180, 0.1, Math.PI);
+    }
+
+    if (!scene.obj.tv) {
+      loadMTLOBJ('tv', -50, 50, -180, 0.18, 0, function(obj) {
+        obj.children[0].material.color.set(0xdddddd);
+        obj.children[1].material.color.set(0xffffff);
+        obj.children[2].material.color.set(0x000000);
+      });
+    }
+    
+    if (!scene.obj.dinnertable) {
+      loadMTLOBJ('dinnertable', 200, 0, -80, 2, Math.PI/2, function(obj) {
+        if (!wood) {getWoodTexture();}
+        obj.children.forEach(function(child, i) {
+          if (i !== 7) {
+            child.material.color.set(0xffffff);
+            child.material.map = wood;
+          } else {
+            child.material.color.set(0xcccccc);
+          }
+        })
+      });
+    }
+    
+    if (!scene.obj.plant) {
+      loadMTLOBJ('plant', -260, 0, -180, 0.2, 0);
+    }
+
+    if (!scene.obj.pic) {
+      loadMTLOBJ('pic', 290, 150, -80, 0.03, -Math.PI/2, function(obj) {
+        obj.children[5].material.color.set(0xffffff);
+        var flower = new THREE.TextureLoader().load('assets/textures/lily.jpg');
+        flower.flipY = false;
+        obj.children[5].material.map = flower;
+      });
+    }
+    
+    if (!scene.obj.window) {
+      loadMTLOBJ('window', -290, 100, 0, 0.1, -Math.PI/2, function(obj) {
+        var view = new THREE.TextureLoader().load('assets/textures/View-out-window.jpg');
+        view.wrapS = THREE.RepeatWrapping;
+        view.wrapT = THREE.RepeatWrapping;
+        var size = (new THREE.Box3().setFromObject(obj)).getSize();
+        view.image.onload = function() {
+          view.repeat.set(size.z / view.image.width, size.y / view.image.height);
+        }
+        obj.children[0].material.color.set(0xffffff);
+        obj.children[0].material.map = view;
+      });
+    }
+  }
+  
 
 
   //Lights
-  var amlight = new THREE.AmbientLight(0x505050);
-  scene.add(amlight);
-  var plight = new THREE.PointLight(0xffffff);
-  plight.position.set(0, 280, 0);
-  plight.distance = 600;
-  plight.intensity = 0.9;
-  plight.castShadow = true;
-  scene.add(plight);
-  var spPos = [
-    new THREE.Vector3(-320, 320, -220),
-    new THREE.Vector3(320, 320, -220),
-    new THREE.Vector3(320, 320, 220),
-    new THREE.Vector3(-320, 320, 220)
-  ];
-  spPos.forEach(function(pos) {
-    var splight = new THREE.SpotLight(0xffffff);
-    splight.position.set(pos.x, pos.y, pos.z);
-    splight.target = plane;
-    splight.intensity = 0.4;
-    splight.distance = 700;
-    splight.castShadow = true;
-    scene.add(splight);
-  });
+  function initLight() {
+    var amlight = new THREE.AmbientLight(0x505050);
+    scene.add(amlight);
+    var plight = new THREE.PointLight(0xffffff);
+    plight.position.set(0, 280, 0);
+    plight.distance = 600;
+    plight.intensity = 0.9;
+    plight.castShadow = true;
+    scene.add(plight);
+    var spPos = [
+      new THREE.Vector3(-320, 320, -220),
+      new THREE.Vector3(320, 320, -220),
+      new THREE.Vector3(320, 320, 220),
+      new THREE.Vector3(-320, 320, 220)
+    ];
+    spPos.forEach(function(pos) {
+      var splight = new THREE.SpotLight(0xffffff);
+      splight.position.set(pos.x, pos.y, pos.z);
+      splight.target = scene.plane;
+      splight.intensity = 0.4;
+      splight.distance = 700;
+      splight.castShadow = true;
+      scene.add(splight);
+    });
+  }
+  
 
   // CONTROLS
-  var cameraControls = new THREE.OrbitControls(camera, renderer.domElement);
-  cameraControls.enableZoom = false;
-  cameraControls.target = new THREE.Vector3(0, 100, 0);
-  cameraControls.update();
+  function initControls() {
+    cameraControls = new THREE.OrbitControls(camera, renderer.domElement);
+    cameraControls.enableZoom = false;
+    cameraControls.target = new THREE.Vector3(0, 100, 0);
+    cameraControls.update();
 
-  var objControls = new THREE.TransformControls(camera, renderer.domElement);
-  objControls.setMode('translate');
-  scene.add(objControls);
+    objControls = new THREE.TransformControls(camera, renderer.domElement);
+    objControls.setMode('translate');
+    scene.add(objControls);
 
-  //translate at xz axis only when move the objects on the floor
-  var disableAxis = ['Y', 'XY', 'YZ', 'XYZ'];
-  var disableIndices = [2, 3, 6, 7, 8]; //2=axis y line, 3=axis y arrow
-  var pickers = objControls.children[0].pickerGizmos;
-  var meshes = objControls.children[0].children[0].children;
-  disableAxis.forEach(function(axis) {
-    pickers[axis][0][0].visible = false;
-  });
-  disableIndices.forEach(function(index) {
-    meshes[index].visible = false;
-  });
+    //translate at xz axis only when move the objects on the floor
+    var disableAxis = ['Y', 'XY', 'YZ', 'XYZ'];
+    var disableIndices = [2, 3, 6, 7, 8]; //2=axis y line, 3=axis y arrow
+    var pickers = objControls.children[0].pickerGizmos;
+    var meshes = objControls.children[0].children[0].children;
+    disableAxis.forEach(function(axis) {
+      pickers[axis][0][0].visible = false;
+    });
+    disableIndices.forEach(function(index) {
+      meshes[index].visible = false;
+    });
 
-  //Actions
-  var raycaster = new THREE.Raycaster();
-  var mouse = new THREE.Vector2;
+    //Actions
+    var raycaster = new THREE.Raycaster();
+    var mouse = new THREE.Vector2;
 
-  function onClick(event) {
-    event.preventDefault();
-    mouse.x = ( (event.clientX || event.pageX) / window.innerWidth ) * 2 - 1;
-    mouse.y = - ( (event.clientY || event.pageY) / window.innerHeight ) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    
-    var intersects = raycaster.intersectObjects(Object.values(scene.obj));
-    if (intersects.length) {
-        console.log('hit')
+    function onClick(event) {
+      event.preventDefault();
+      mouse.x = ( (event.clientX || event.pageX) / window.innerWidth ) * 2 - 1;
+      mouse.y = - ( (event.clientY || event.pageY) / window.innerHeight ) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      
+      var intersects = raycaster.intersectObjects(Object.values(scene.obj));
+      if (intersects.length) {
+          console.log('hit')
+      }
     }
+
+    document.addEventListener('click', onClick, false);
+    document.addEventListener('touchend', onClick, false);
   }
 
-  document.addEventListener('click', onClick, false);
-  document.addEventListener('touchend', onClick, false);
-
-
-
-  var frame;
 
   function animate() {
-    frame = requestAnimationFrame( animate );
+    requestAnimationFrame( animate );
     render();
   }
 
   function render() {
     var delta = clock.getDelta();
     //cameraControls.update(delta);
-    objControls.update();
+    //objControls.update();
 
     renderer.render(scene, camera);
   }
-
-  animate();
-
   
 </script>
 </body>
