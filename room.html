@@ -27,7 +27,8 @@
 </head>
 <body>
 <div id="tip">
-  Tip: All textures from cgtrader.com.
+  Tip: Click to move the furnatures.<br>
+  All textures from cgtrader.com.
   <br>
   OBJ Loading Logs:
   <br>
@@ -54,39 +55,35 @@
 
   var storage = new Storage();
 
-  storage.init(function() {
+  /*storage.init(function() {
     storage.data = {};
     storage.get(function(store) {
       init(store);
     });
 
     readyToStore();
-  });
+  });*/
 
   function init(store) {
     initScene();
+    initRoom();
+    initLight();
 
-    if (store && store.room) {
+    /*if (store && store.room) {
       var data = store.room;
       scene.obj = {};
       for (var i in data) {
         var obj = new THREE.ObjectLoader().parse(data[i]);
         scene.add(obj);
-        if (i === 'wall' || i === 'plane') {
-          scene[i] = obj;
-        } else {
-          scene.obj[i] = obj;
-        }
+        scene.obj[i] = obj;
         log.innerHTML += i + ' load from storage<br>';
         console.log(i + ' load from storage');
       }
     } else {
       console.log('load from network');
-    }
+    }*/
     
-    initRoom();
     initObjs();
-    initLight();
     initControls();
     animate();
   }
@@ -95,10 +92,7 @@
     if (!scene || !camera) {
       return setTimeout(readyToStore, 5000);
     }
-    var room = {
-      wall: scene.wall.toJSON(),
-      plane: scene.plane.toJSON()
-    };
+    var room = {};
 
     for(var i in scene.obj) {
       room[i] = scene.obj[i].toJSON();
@@ -108,6 +102,8 @@
     storage.set(storage.data);
     setTimeout(readyToStore, 5000);
   }
+
+  init();
 
 
   function initScene() {
@@ -194,7 +190,7 @@
   //Obj & Mtl
   function initObjs() {
     var wood;
-    
+
     if (!scene.obj) {
       scene.obj = {};
     }
@@ -218,9 +214,17 @@
 
           //for group raycast test
           obj.raycast = function(raycaster, intersects) {
-            return obj.children.every(function(child) {
+            return obj.children.some(function(child, i) {
               return child.raycast(raycaster, intersects);
             });
+          }
+
+          if (name === 'door') {
+            obj.ctrl = scene.ctrlTransX;
+          } else if (name === 'pic' || name === 'window') {
+            obj.ctrl = scene.ctrlTransYZ;
+          } else {
+            obj.ctrl = scene.ctrlTransXZ;
           }
 
           if (callback) {
@@ -251,7 +255,6 @@
     
     if (!scene.obj.sofa) {
       loadMTLOBJ('sofa', -100, 0, 180, 1, Math.PI, function() {
-        objControls.attach(scene.obj.sofa);
       });
     }
     
@@ -346,21 +349,43 @@
     cameraControls.target = new THREE.Vector3(0, 100, 0);
     cameraControls.update();
 
-    objControls = new THREE.TransformControls(camera, renderer.domElement);
-    objControls.setMode('translate');
-    scene.add(objControls);
-
     //translate at xz axis only when move the objects on the floor
-    var disableAxis = ['Y', 'XY', 'YZ', 'XYZ'];
-    var disableIndices = [2, 3, 6, 7, 8]; //2=axis y line, 3=axis y arrow
-    var pickers = objControls.children[0].pickerGizmos;
-    var meshes = objControls.children[0].children[0].children;
-    disableAxis.forEach(function(axis) {
-      pickers[axis][0][0].visible = false;
-    });
-    disableIndices.forEach(function(index) {
-      meshes[index].visible = false;
-    });
+    function changeCtrl(disableAxis, disableIndices) {
+      if (objControls) {
+        scene.remove(objControls);
+      }
+      objControls = new THREE.TransformControls(camera, renderer.domElement);
+      objControls.setMode('translate');
+      scene.add(objControls);
+
+      var pickers = objControls.children[0].pickerGizmos;
+      var meshes = objControls.children[0].children[0].children;
+      disableAxis.forEach(function(axis) {
+        pickers[axis][0][0].visible = false;
+      });
+      disableIndices.forEach(function(index) {
+        meshes[index].visible = false;
+      });
+    }
+
+    scene.ctrlTransXZ = function() {
+      var disableAxis = ['Y', 'XY', 'YZ', 'XYZ'];
+      var disableIndices = [2, 3, 6, 7, 8]; //2=axis y line, 3=axis y arrow
+      changeCtrl(disableAxis, disableIndices);
+    }
+
+    scene.ctrlTransYZ = function() {
+      var disableAxis = ['X', 'XY', 'XZ', 'XYZ'];
+      var disableIndices = [0, 1, 6, 7, 9]; //2=axis y line, 3=axis y arrow
+      changeCtrl(disableAxis, disableIndices);
+    }
+
+    scene.ctrlTransX = function() {
+      var disableAxis = ['Y', 'Z', 'XY', 'XZ', 'YZ', 'XYZ'];
+      var disableIndices = [2, 3, 4, 5, 6, 7, 8, 9]; //2=axis y line, 3=axis y arrow
+      changeCtrl(disableAxis, disableIndices);
+    }
+    
 
     //Actions
     var raycaster = new THREE.Raycaster();
@@ -374,7 +399,8 @@
       
       var intersects = raycaster.intersectObjects(Object.values(scene.obj));
       if (intersects.length) {
-          console.log('hit')
+        intersects[0].object.parent.ctrl();
+        objControls && objControls.attach(intersects[0].object.parent); //the group obj
       }
     }
 
