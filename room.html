@@ -7,8 +7,13 @@
   <script type="text/javascript" src="libs/storage.js"></script>
   <script type="text/javascript" src="libs/plugins/controls/OrbitControls.js"></script>
   <script type="text/javascript" src="libs/plugins/controls/TransformControls.js"></script>
+  <script type="text/javascript" src="libs/plugins/controls/DeviceOrientationControls.js"></script>
   <script type="text/javascript" src="libs/plugins/loaders/MTLLoader.js"></script>
   <script type="text/javascript" src="libs/plugins/loaders/OBJLoader.js"></script>
+  <!-- webvr -->
+  <script type="text/javascript" src="libs/plugins/controls/VRControls.js"></script>
+  <script type="text/javascript" src="libs/plugins/effects/VREffect.js"></script>
+  <script type="text/javascript" src="libs/plugins/vr/WebVR.js"></script>
   <style type="text/css">
     html, body {
       width: 100%;
@@ -39,6 +44,8 @@
   document.body.appendChild( container );
 
   var scene, camera, cameraControls, objControls;
+
+  var vrControls, vrEffect;
 
   var clock = new THREE.Clock();
 
@@ -84,7 +91,7 @@
     }*/
     
     initObjs();
-    initControls();
+    initVR();
     animate();
   }
 
@@ -111,8 +118,8 @@
 
     camera = new THREE.PerspectiveCamera( 60, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 1200 );
     //var camera = new THREE.OrthographicCamera(-1000, 1000, 600, -600, 1, 2000);
-    camera.position.set( 200, 130, -50 );
-    //camera.lookAt(new THREE.Vector3(0, 150, -100));
+    camera.position.set( 200, 150, -50 );
+    camera.lookAt(new THREE.Vector3(0, 150, -100));
     scene.add(camera);
 
     var axisHelper = new THREE.AxisHelper( 1000 );
@@ -343,7 +350,7 @@
   
 
   // CONTROLS
-  function initControls() {
+  function initOrbitControls() {
     cameraControls = new THREE.OrbitControls(camera, renderer.domElement);
     cameraControls.enableZoom = false;
     cameraControls.target = new THREE.Vector3(0, 100, 0);
@@ -408,18 +415,51 @@
     document.addEventListener('touchend', onClick, false);
   }
 
+  function initOrientControls() {
+    cameraControls = new THREE.DeviceOrientationControls( camera );
+  }
+
+  function initControls() {
+    if (typeof orientation !== 'undefined') {
+      initOrientControls();
+    } else {
+      initOrbitControls();
+    }
+  }
+
 
   function animate() {
-    requestAnimationFrame( animate );
-    render();
+    if (vrEffect) {
+      vrControls.update();
+      vrEffect.render(scene, camera);
+      vrEffect.requestAnimationFrame( animate );
+    } else {
+      requestAnimationFrame( animate );
+      render();
+    }
+    
   }
 
   function render() {
     var delta = clock.getDelta();
-    //cameraControls.update(delta);
-    //objControls.update();
+    cameraControls && cameraControls.update();
 
     renderer.render(scene, camera);
+  }
+
+  function initVR() {
+    if (WEBVR.isAvailable() === false) {
+      document.body.appendChild( WEBVR.getMessage() );
+      initControls();
+    } else {
+      vrControls = new THREE.VRControls(camera, function(e) {
+        vrEffect = new THREE.VREffect(renderer);
+        document.body.appendChild( WEBVR.getButton( vrEffect ) );
+      }, function() {
+        initControls();
+      });
+      
+    }
   }
   
 </script>

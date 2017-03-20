@@ -3,7 +3,7 @@
  * @author mrdoob / http://mrdoob.com
  */
 
-THREE.VRControls = function ( object, onError ) {
+THREE.VRControls = function ( object, onSuccess, onError ) {
 
 	var scope = this;
 
@@ -26,6 +26,8 @@ THREE.VRControls = function ( object, onError ) {
 		if ( displays.length > 0 ) {
 
 			vrDisplay = displays[ 0 ];
+
+			if (onSuccess) onSuccess();
 
 		} else {
 
